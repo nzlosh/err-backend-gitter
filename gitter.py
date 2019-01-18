@@ -25,6 +25,7 @@ class GitterBackendException(Exception):
 class MissingRoomAttributeError(GitterBackendException):
     """Raised when an identifier is missing the expected room attribute"""
 
+
 class RoomNotFoundError(GitterBackendException):
     """Raised when room is not found on querying the room resource"""
 
@@ -221,6 +222,7 @@ class GitterRoom(Room):
 
     __str__ = __unicode__
 
+
 class GitterRoomThread(threading.Thread):
     def __init__(self, room, backend):
         super().__init__()
@@ -280,8 +282,9 @@ class GitterRoomThread(threading.Thread):
                     self.backend.callback_message(m)
                 else:
                     log.debug('Received keep-alive on %s', self.room.name)
-        except:
+        except Exception as e:
             log.exception('An exception occured while streaming the room: ')
+
 
 class GitterBackend(ErrBot):
     """
@@ -328,14 +331,22 @@ class GitterBackend(ErrBot):
         return bot_identifier
 
     def readAPIRequest(self, endpoint, params=None):
-        r = requests.get('https://api.gitter.im/v1/' + endpoint, headers=self.base_headers, params=params)
+        r = requests.get(
+            'https://api.gitter.im/v1/' + endpoint,
+            headers=self.base_headers,
+            params=params
+        )
         if r.status_code != requests.codes.ok:
             raise Exception("Server returned an error %d:%s" % (r.status_code, r.text))
         return r.json()
 
     def streamAPIRequest(self, endpoint, params=None):
-        r = requests.get('https://stream.gitter.im/v1/' + endpoint, headers=self.base_headers, params=params,
-                         stream=True)
+        r = requests.get(
+            'https://stream.gitter.im/v1/' + endpoint,
+            headers=self.base_headers,
+            params=params,
+            stream=True
+        )
         if r.status_code != requests.codes.ok:
             raise Exception("Server returned an error %d:%s" % (r.status_code, r.text))
         return r
@@ -379,7 +390,7 @@ class GitterBackend(ErrBot):
         for json_room in json_rooms:
             if json_room['oneToOne']:
                 json_user = json_room['user']
-                log.debug("found contact %s" % repr(json_room))
+                log.debug("found contact %s" % repr(json_user))
                 contacts.append(
                     GitterRoom(
                         backend=self,
@@ -439,7 +450,9 @@ class GitterBackend(ErrBot):
             self.writeAPIRequest('rooms/%s/chatMessages' % mess.to.room.idd,
                                  content)
         else:
-            raise MissingRoomAttributeError('Unable to send message, `mess.to.room` is not present.')
+            raise MissingRoomAttributeError(
+                'Unable to send message, `mess.to.room` is not present.'
+            )
 
     def build_reply(self, mess, text=None, private=False, threaded=False):
         response = self.build_message(text)
