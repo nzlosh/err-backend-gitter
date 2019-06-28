@@ -9,8 +9,7 @@ import threading
 from errbot.backends.base import Message, Person, Room, RoomOccupant
 from errbot.rendering import md
 
-# Can't use __name__ because of Yapsy
-log = logging.getLogger('errbot.backends.gitter')
+log = logging.getLogger(__name__)
 
 # This limit wasn't published anywhere at time of implementation,
 # but experimentation showed that 4096 was the absolute maximum
@@ -106,21 +105,25 @@ class GitterPerson(Person):
 
 
 class GitterRoomOccupant(GitterPerson, RoomOccupant):
-    def __init__(self,
-                 room,
-                 idd=None,
-                 username=None,
-                 displayName=None,
-                 url=None,
-                 avatarSmall=None,
-                 avatarMedium=None):
+    def __init__(
+        self,
+        room,
+        idd=None,
+        username=None,
+        displayName=None,
+        url=None,
+        avatarSmall=None,
+        avatarMedium=None
+    ):
         self._room = room
-        super().__init__(idd,
-                         username,
-                         displayName,
-                         url,
-                         avatarSmall,
-                         avatarMedium)
+        super().__init__(
+            idd,
+            username,
+            displayName,
+            url,
+            avatarSmall,
+            avatarMedium
+        )
 
     @property
     def room(self):
@@ -128,18 +131,20 @@ class GitterRoomOccupant(GitterPerson, RoomOccupant):
 
     @staticmethod
     def build_from_json(room, json_user):
-        return GitterRoomOccupant(room,
-                                  idd=json_user['id'],
-                                  username=json_user['username'],
-                                  displayName=json_user['displayName'],
-                                  url=json_user['url'],
-                                  avatarSmall=json_user['avatarUrlSmall'],
-                                  avatarMedium=json_user['avatarUrlMedium'])
+        return GitterRoomOccupant(
+            room,
+            idd=json_user['id'],
+            username=json_user['username'],
+            displayName=json_user['displayName'],
+            url=json_user['url'],
+            avatarSmall=json_user['avatarUrlSmall'],
+            avatarMedium=json_user['avatarUrlMedium']
+        )
 
     def __unicode__(self):
         if self.url == self._room._uri:
             return self.username  # this is a 1 to 1 MUC
-        return self.username + '@' + self._room.name
+        return "{}@{}".format(self.username, self._room.name)
 
     def __eq__(self, other):
         if hasattr(other, 'person'):
@@ -162,10 +167,10 @@ class GitterRoom(Room):
         self._joined = False
 
     def join(self, username=None, password=None):
-        log.debug("Joining room %s (%s)" % (self._uri, self._idd))
+        log.debug("Joining room {} ({})".format(self._uri, self._idd))
         try:
             response = self._backend.writeAPIRequest('rooms', {'uri': self._uri})
-            log.debug("Response: %s" % response)
+            log.debug("Response: {}".format(response))
         except Exception:
             log.exception("Failed to join room")
         self._backend.follow_room(self)
@@ -237,7 +242,7 @@ class GitterRoomThread(threading.Thread):
 
     def run(self):
         self.room._joined = True
-        log.debug("thread for %s started" % self.room.idd)
+        log.debug("thread for {} started".format(self.room.idd))
         while True:
             self.stream()
             self._delay_reconnect()
@@ -261,7 +266,7 @@ class GitterRoomThread(threading.Thread):
 
     def stream(self):
         r = self.backend.streamAPIRequest('rooms/%s/chatMessages' % self.room.idd)
-        log.debug("connected %s" % self.room.name)
+        log.debug("connected {}".format(self.room.name))
 
         try:
             self.reset_reconnection_count()
@@ -269,19 +274,20 @@ class GitterRoomThread(threading.Thread):
                 if line.strip():
                     json_message = json.loads(line.decode('utf-8'))
                     from_user = json_message['fromUser']
-                    log.debug("Raw message from room %s: %s" % (self.room.name, json_message))
-                    m = Message(json_message['text'],
-                                extras={'id': json_message['id']})
+                    log.debug("Raw message from room {}: {}".format(self.room.name, json_message))
+                    m = Message(json_message['text'], extras={'id': json_message['id']})
                     if self.room._uri == from_user['url']:
                         m.to = self.backend.bot_identifier
                     else:
                         m.to = self.room
-                        m.extras['url'] = 'https://gitter.im/%s?at=%s' % (
-                            self.room.uri, m.extras['id'])
+                        m.extras['url'] = 'https://gitter.im/{}?at={}'.format(
+                            self.room.uri,
+                            m.extras['id']
+                        )
                     m.frm = GitterRoomOccupant.build_from_json(self.room, from_user)
                     self.backend.callback_message(m)
                 else:
-                    log.debug('Received keep-alive on %s', self.room.name)
+                    log.debug('Received keep-alive on {}'.format(self.room.name))
         except Exception as e:
             log.exception('An exception occured while streaming the room: ')
 
@@ -301,6 +307,9 @@ class GitterBackend(ErrBot):
             config.MESSAGE_SIZE_LIMIT = GITTER_MESSAGE_SIZE_LIMIT
         self.md = md()
         identity = config.BOT_IDENTITY
+
+        self.api_base = 'https://api.gitter.im/v1'
+        self.stream_base = 'https://stream.gitter.im/v1'
 
         self.token = identity.get('token', None)
         self.rooms_to_join = config.CHATROOM_PRESENCE
@@ -327,43 +336,43 @@ class GitterBackend(ErrBot):
         r = self.readAPIRequest('user')
         assert len(r) == 1
         bot_identifier = GitterPerson.build_from_json(r[0])
-        log.debug("Done! I'm connected as %s", bot_identifier)
+        log.debug("Done! I'm connected as {}".format(bot_identifier))
         return bot_identifier
 
     def readAPIRequest(self, endpoint, params=None):
         r = requests.get(
-            'https://api.gitter.im/v1/' + endpoint,
+            '{}/{}'.format(self.api_base, endpoint),
             headers=self.base_headers,
             params=params
         )
         if r.status_code != requests.codes.ok:
-            raise Exception("Server returned an error %d:%s" % (r.status_code, r.text))
+            raise Exception("Server returned an error {}:{}".format(r.status_code, r.text))
         return r.json()
 
     def streamAPIRequest(self, endpoint, params=None):
         r = requests.get(
-            'https://stream.gitter.im/v1/' + endpoint,
+            '{}/{}'.format(self.stream_base, endpoint),
             headers=self.base_headers,
             params=params,
             stream=True
         )
         if r.status_code != requests.codes.ok:
-            raise Exception("Server returned an error %d:%s" % (r.status_code, r.text))
+            raise Exception("Server returned an error {}:{}".format(r.status_code, r.text))
         return r
 
     def writeAPIRequest(self, endpoint, content):
         headers = self.base_headers.copy()
         headers['Content-Type'] = 'application/json'
         data = json.dumps(content)
-        log.debug("POST url= %s, data = %s" % ('https://api.gitter.im/v1/' + endpoint, data))
-        r = requests.post('https://api.gitter.im/v1/' + endpoint, headers=headers, data=data)
+        log.debug("POST url={}/{}, data={}".format(self.api_base, endpoint, data))
+        r = requests.post('{}/{}'.format(self.api_base, endpoint), headers=headers, data=data)
 
         if r.status_code != requests.codes.ok:
-            raise Exception("Server returned an error %d:%s" % (r.status_code, r.text))
+            raise Exception("Server returned an error {}:{}".format(r.status_code, r.text))
         return r.json()
 
     def follow_room(self, room):
-        log.debug("following room %s" % room._idd)
+        log.debug("following room {}".format(room._idd))
         if room._uri not in self._joined_rooms:
             thread = GitterRoomThread(room, self)
             thread.daemon = True
@@ -371,16 +380,15 @@ class GitterBackend(ErrBot):
             with self._joined_rooms_lock:
                 self._joined_rooms.append(room._uri)
         else:
-            log.info("Already joined %s", room.name)
+            log.info("Already joined {}".format(room.name))
 
     def rooms(self):
         json_rooms = self.readAPIRequest('rooms')
         rooms = []
         for json_room in json_rooms:
             if not json_room['oneToOne']:
-                log.debug("found room %s (%s)" % (json_room['name'], json_room['uri']))
-                rooms.append(GitterRoom(self, json_room['id'], json_room['uri'],
-                                        json_room['name']))
+                log.debug("found room {} ({})".format(json_room['name'], json_room['uri']))
+                rooms.append(GitterRoom(self, json_room['id'], json_room['uri'], json_room['name']))
         return rooms
 
     def contacts(self):
@@ -390,7 +398,7 @@ class GitterBackend(ErrBot):
         for json_room in json_rooms:
             if json_room['oneToOne']:
                 json_user = json_room['user']
-                log.debug("found contact %s" % repr(json_user))
+                log.debug("found contact {}".format(repr(json_user)))
                 contacts.append(
                     GitterRoom(
                         backend=self,
@@ -430,25 +438,24 @@ class GitterBackend(ErrBot):
         if room is not None:
             return room
 
-        raise Exception("Couldn't build an identifier from %s." % strrep)
+        raise Exception("Couldn't build an identifier from {}.".format(strrep))
 
     def query_room(self, room):
         # TODO: maybe we can query the room resource only
         for native_room in self.rooms():
             if native_room.uri == room:
-                log.debug("Found room %s" % room)
+                log.debug("Found room {}".format(room))
                 return native_room
         return None
 
     def send_message(self, mess):
         super().send_message(mess)
-        log.debug("bf body = %s" % mess.body)
+        log.debug("bf body={}".format(mess.body))
         body = self.md.convert(mess.body)  # strips the unsupported stuff.
-        log.debug("af body = %s" % body)
+        log.debug("af body={}".format(body))
         content = {'text': body}
         if hasattr(mess.to, 'room'):
-            self.writeAPIRequest('rooms/%s/chatMessages' % mess.to.room.idd,
-                                 content)
+            self.writeAPIRequest('rooms/{}/chatMessages'.format(mess.to.room.idd), content)
         else:
             raise MissingRoomAttributeError(
                 'Unable to send message, `mess.to.room` is not present.'
